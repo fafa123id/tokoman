@@ -92,8 +92,44 @@ class riwayatController extends Controller
                         WHEN riwayat.jenis_riwayat = 'masuk' THEN stok_barangs.harga_beli * riwayat.jumlah
                       END as total_harga")
         ])
-            ->join('stok_barangs', 'stok_barangs.id', '=', 'riwayat.id_barang')
-            ->orderBy('riwayat.created_at', 'desc');
+            ->join('stok_barangs', 'stok_barangs.id', '=', 'riwayat.id_barang');
+
+        // Filter jenis riwayat
+        if ($request->has('jenis_riwayat') && $request->jenis_riwayat != '') {
+            $query->where('riwayat.jenis_riwayat', $request->jenis_riwayat);
+        }
+
+        // Filter berdasarkan minggu
+        if ($request->has('week') && $request->week != '') {
+            $year = $request->year ?? Carbon::now()->year;
+            $month = $request->month ?? Carbon::now()->month;
+            $firstOfMonth = Carbon::createFromDate($year, $month, 1);
+            
+            $startDay = ($request->week - 1) * 7 + 1;
+            $endDay = min($startDay + 6, $firstOfMonth->daysInMonth);
+            
+            $startDate = $firstOfMonth->copy()->addDays($startDay - 1)->startOfDay();
+            $endDate = $firstOfMonth->copy()->addDays($endDay - 1)->endOfDay();
+            
+            $query->whereBetween('riwayat.tanggal', [ // Ganti created_at menjadi tanggal
+                $startDate->toDateTimeString(),
+                $endDate->toDateTimeString()
+            ]);
+        }
+        // Filter tahun dan bulan hanya jika week tidak diset
+        else {
+            if ($request->has('year') && $request->year != '') {
+                $query->whereYear('riwayat.tanggal', $request->year);
+            }
+            if ($request->has('month') && $request->month != '') {
+                $query->whereMonth('riwayat.tanggal', $request->month);
+            }
+        }
+
+        $query->orderBy('riwayat.tanggal', 'desc');
+        
+        $results = $query->paginate(5)->appends($request->all());
+
         $years = Riwayat::selectRaw('YEAR(tanggal) as year')
             ->groupBy('year')
             ->orderBy('year', 'desc')
@@ -103,60 +139,6 @@ class riwayatController extends Controller
             ->groupBy('month')
             ->orderBy('month', 'asc')
             ->get();
-
-        if ($request->has('week') && $request->week == 'today') {
-            $query->whereDate('tanggal', '=', date('Y-m-d'));
-
-
-            if ($request->has('jenis_riwayat') && $request->jenis_riwayat != '') {
-                $query->where('riwayat.jenis_riwayat', $request->jenis_riwayat);
-            }
-            $riwayatTerbaru = $query->paginate(5);
-            return view('riwayat.index', [
-                'riwayatTerbaru' => $riwayatTerbaru,
-                'years' => $years,
-                'months' => $months
-            ]);
-        }
-        if ($request->has('jenis_riwayat') && $request->jenis_riwayat != '') {
-            $query->where('riwayat.jenis_riwayat', $request->jenis_riwayat);
-        }
-
-
-        if ($request->has('year') && $request->year != '') {
-            $query->whereYear('riwayat.created_at', $request->year);
-        }
-
-        if ($request->has('month') && $request->month != '') {
-            $query->whereMonth('riwayat.created_at', $request->month);
-        }
-
-        if ($request->has('week') && $request->week != '') {
-            $year = $request->year ?? Carbon::now()->year;
-            $month = $request->month ?? Carbon::now()->month;
-            $firstOfMonth = Carbon::createFromDate($year, $month, 1);
-            $daysInMonth = $firstOfMonth->daysInMonth;
-
-            $startDay = ($request->week - 1) * 7 + 1;
-            $endDay = $startDay + 6;
-
-            if ($endDay > $daysInMonth) {
-                $endDay = $daysInMonth;
-            }
-
-            $startDate = $firstOfMonth->copy()->addDays($startDay - 1)->startOfDay();
-            $endDate = $firstOfMonth->copy()->addDays($endDay - 1)->endOfDay();
-
-            $query->whereBetween('riwayat.created_at', [
-                $startDate->toDateTimeString(),
-                $endDate->toDateTimeString()
-            ]);
-        }
-
-
-        $results = $query->paginate(5); // Adjust pagination as needed
-
-        // Append all current request parameters to the pagination links
 
         return view('riwayat.index', [
             'riwayatTerbaru' => $results,
