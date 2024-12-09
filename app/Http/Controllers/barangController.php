@@ -2,21 +2,25 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\ItemCreated;
+use App\Misc\MiscManager;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use App\Models\StokBarang;
-use App\Models\kontak;
-use App\Models\Riwayat;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Auth;
-use Pusher\Pusher;
-use Route;
+use App\Repositories\RepositoryManager;
 
 class barangController extends Controller
 {
+    private $repository;
+    private $pusher;
+    private $imageManager;
+
+    public function __construct(RepositoryManager $repositoryManager, MiscManager $miscFeature )
+    {
+        $this->repository = $repositoryManager->getRepository('barang');
+        $this->pusher = $miscFeature->getMisc('pusher');
+    }
     public $needPush = true;
     public function apiRecieve()
     {
@@ -37,7 +41,7 @@ class barangController extends Controller
     }
     public function index()
     {
-        $barang = StokBarang::paginate(9);
+        $barang = $this->repository->all()::paginate(9);
         return view("stok.index", ["barangs" => $barang]);
 
     }
@@ -58,27 +62,15 @@ class barangController extends Controller
         if ($validator->fails()) {
             return redirect('/stok')->with('error', 'Stok harus angka');
         }
-        $inputanstok = $request->stok;
-        $barang = StokBarang::where('id_barang', $id)->first();
-        $riwayat = new Riwayat();
-
-        $riwayat->nama_barang = $barang->nama_barang;
-        $riwayat->jenis_riwayat = 'masuk';
-        $riwayat->jumlah = abs($inputanstok);
-        $riwayat->tanggal = now();
-        $riwayat->id_barang = $barang->id;
-        $riwayat->save();
-
-        $barang->stok += abs($inputanstok);
-        $barang->save();
-
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('my-channel', 'my-event', [
-            'massage' => 'Stok Barang ' . $barang->nama_barang . ' Berhasil Ditambahkan Sebanyak ' . $inputanstok . ' oleh user ' . Auth::user()->name,
+        $paramupdate = [
+            'stok' =>$request->stok
+        ];
+        //Melakuan updateStok melalui repository
+        $this->repository->updateStok($id,$paramupdate);
+        $this->pusher->doPush(['massage' => 'Stok Barang ' . $this->repository->find($id)->nama_barang . ' Berhasil Ditambahkan Sebanyak ' . $request->stok . ' oleh user ' . Auth::user()->name,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
-            'id' => $barang->id_barang,
-            'excepturl' => ''
-        ]);
+            'id' => $this->repository->find($id)->id_barang,
+            'excepturl' => '']);
 
         return redirect('/stok')->with('success', 'Stok Berhasil Ditambahkan');
     }
@@ -117,22 +109,16 @@ class barangController extends Controller
         if ($validator->fails()) {
             return redirect('/stok/add')->with('error', $validator->errors()->first());
         }
-
         $id = '';
-        $nama_barang = $request->nama;
-        ;
-        $ukuran = preg_replace('/\D/', '', $request->ukuran); // Mengambil angka dari ukuran
-        $jenis_tutup = $request->jenis == 'tinggi' ? 'H' : 'L'; // Mengambil jenis tutup
-
-        if (strlen($nama_barang) >= 3) {
-            $id .= strtoupper(substr($nama_barang, 0, 2)); // Mengambil 2 huruf depan
-            $id .= strtoupper(substr($nama_barang, -1)); // Mengambil 1 huruf belakang
+        if (strlen($request->nama) >= 3) {
+            $id .= strtoupper(substr($request->nama, 0, 2)); // Mengambil 2 huruf depan
+            $id .= strtoupper(substr($request->nama, -1)); // Mengambil 1 huruf belakang
         } else {
-            $id .= strtoupper(substr($nama_barang, 0, 1)); // Mengambil 1 huruf depan
+            $id .= strtoupper(substr($request->nama, 0, 1)); // Mengambil 1 huruf depan
         }
 
-        $id .= $ukuran;
-        $id .= $jenis_tutup;
+        $id .= $request->ukuran;
+        $id .= $request->jenis == 'tinggi' ? 'H' : 'L';
         $id .= $request->bal;
         $path1 = '';
         $path2 = '';
@@ -151,39 +137,27 @@ class barangController extends Controller
             $path2 = $this->getUrlImg($filename2);
         }
 
-        $barang = new StokBarang();
-        $barang->id_barang = $id;
-        $barang->nama_barang = $request->nama;
-        $barang->stok = abs($request->stok);
-        $barang->bal = abs($request->bal);
-        $barang->jenis_tutup = $request->jenis;
-        $barang->harga_beli = $request->buy;
-        $barang->harga_jual = $request->sell;
-        $barang->ukuran = $request->ukuran;
-        $barang->pathImg1 = $path1;
-        $barang->pathImg2 = $path2;
-        $barang->fileName1 = $filename1;
-        $barang->fileName2 = $filename2;
-        $barang->save();
-
-        $barang = StokBarang::where('id_barang', $id)->first();
-        $riwayat = new Riwayat();
-
-        $riwayat->nama_barang = $barang->nama_barang;
-        $riwayat->jenis_riwayat = 'masuk';
-        $riwayat->jumlah = abs($request->stok);
-        $riwayat->tanggal = now();
-        $riwayat->id_barang = $barang->id;
-        $riwayat->save();
-        if ($this->needPush) {
-            $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-            $pusher->trigger('my-channel', 'my-event', [
-                'massage' => 'Barang ' . $barang->nama_barang . ' Berhasil Ditambahkan oleh user ' . Auth::user()->name,
-                'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
-                'id' => $barang->id_barang,
-                'excepturl' => ''
-            ]);
-        }
+        $paraminsert=[
+            'id'=>$id,
+            'nama_barang'=> $request->nama,
+            'ukuran' => $request->ukuran,
+            'jenis_tutup' => $request->jenis,
+            'stok'=>abs($request->stok),
+            'bal'=>abs($request->bal),
+            'harga_beli'=>$request->buy,
+            'harga_jual'=>$request->sell,
+            'path1'=>$path1,
+            'path2'=>$path2,
+            'filename1'=>$filename1,
+            'filename2'=>$filename2
+        ];
+        $this->repository->insert($paraminsert);
+        $this->pusher->doPush([
+            'massage' => 'Barang ' . $request->nama . ' Berhasil Ditambahkan oleh user ' . Auth::user()->name,
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
+            'id' => $id,
+            'excepturl' => ''
+        ]);
         return redirect('/stok')->with('success', 'Data Berhasil Ditambahkan');
     }
 
@@ -203,8 +177,8 @@ class barangController extends Controller
         $barang->pathImg2 = '';
         $barang->fileName2 = '';
         $barang->save();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('my-channel', 'my-event', [
+        
+        $this->pusher->doPush([
             'massage' => 'Gambar 2 Barang ' . $barang->nama_barang . ' Berhasil Dihapus oleh user ' . Auth::user()->name,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $barang->id_barang,
@@ -259,53 +233,10 @@ class barangController extends Controller
         if ($validator->fails()) {
             return redirect('/stok/edit/' . $id)->with('error', $validator->errors()->first());
         }
-        $barang = StokBarang::where('id_barang', $id)->first();
-        $oldName = $barang->nama_barang;
-        $path1 = $barang->pathImg1;
-        $path2 = $barang->pathImg2;
-        $filename1 = $barang->fileName1;
-        $filename2 = $barang->fileName2;
-        if ($request->file('gambar1') != null) {
-            $this->timpaGambar1($barang);
-            $file = $request->file('gambar1');
-            $filename1 = '-' . time() . '.' . $file->getClientOriginalExtension();
-            Storage::disk('s3')->put('images/' . $filename1, file_get_contents($file));
-            $path1 = $this->getUrlImg($filename1);
-        }
-        if ($request->file('gambar2') != null) {
-            $this->timpaGambar2($barang);
-            $file = $request->file('gambar2');
-            $filename2 = '-' . time() . '.' . $file->getClientOriginalExtension();
-            Storage::disk('s3')->put('images/' . $filename2, file_get_contents($file));
-            $path2 = $this->getUrlImg($filename2);
-        }
-
-
-        $barang->nama_barang = $request->nama;
-        $barang->stok = abs($request->stok);
-        $barang->bal = abs($request->bal);
-        $barang->jenis_tutup = $request->jenis;
-        $barang->harga_beli = $request->buy;
-        $barang->harga_jual = $request->sell;
-        $barang->ukuran = $request->ukuran;
-        $barang->pathImg1 = $path1;
-        $barang->pathImg2 = $path2;
-        $barang->fileName1 = $filename1;
-        $barang->fileName2 = $filename2;
-        $barang->save();
-
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger(
-            'my-channel',
-            'my-event',
-            [
-                'massage' => 'Barang ' . $barang->nama_barang . ' Berhasil Diubah oleh user ' . Auth::user()->name,
-                'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
-                'id' => $barang->id_barang,
-                'excepturl' => 'dashboard,riwayat,riwayatfilter'
-            ]
-        );
-
+        
+        $this->repository->update($id,$request);
+        
+       
         return redirect('/stok')->with('success', 'Data Berhasil Diubah');
     }
 
@@ -318,8 +249,7 @@ class barangController extends Controller
         }
         Storage::disk('s3')->delete('images/' . $barang->fileName1);
         StokBarang::destroy($id);
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('my-channel', 'my-event', [
+        $this->pusher->doPush([
             'massage' => 'Barang ' . $barang->nama_barang . ' Berhasil Dihapus oleh user ' . Auth::user()->name,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $barang->id_barang,
