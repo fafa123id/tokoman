@@ -132,24 +132,25 @@ class riwayatController extends Controller
         }
 
         if ($request->has('week') && $request->week != '') {
-            $year = $request->year ?? date('Y');
-            $month = $request->month ?? date('m');
+            $year = $request->year ?? Carbon::now()->year;
+            $month = $request->month ?? Carbon::now()->month;
             $firstOfMonth = Carbon::createFromDate($year, $month, 1);
             $daysInMonth = $firstOfMonth->daysInMonth;
 
-            // Calculate the start and end dates for the selected week
             $startDay = ($request->week - 1) * 7 + 1;
             $endDay = $startDay + 6;
 
-            // Adjust the end day for the last week of the month
             if ($endDay > $daysInMonth) {
                 $endDay = $daysInMonth;
             }
 
-            $startDate = $firstOfMonth->copy()->addDays($startDay - 1);
-            $endDate = $firstOfMonth->copy()->addDays($endDay - 1);
+            $startDate = $firstOfMonth->copy()->addDays($startDay - 1)->startOfDay();
+            $endDate = $firstOfMonth->copy()->addDays($endDay - 1)->endOfDay();
 
-            $query->whereBetween('riwayat.created_at', [$startDate, $endDate]);
+            $query->whereBetween('riwayat.created_at', [
+                $startDate->toDateTimeString(),
+                $endDate->toDateTimeString()
+            ]);
         }
 
 
