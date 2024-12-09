@@ -98,23 +98,28 @@ class riwayatController extends Controller
         if ($request->has('jenis_riwayat') && $request->jenis_riwayat != '') {
             $query->where('riwayat.jenis_riwayat', $request->jenis_riwayat);
         }
-
+        
         // Filter berdasarkan minggu
         if ($request->has('week') && $request->week != '') {
-            $year = $request->year ?? Carbon::now()->year;
-            $month = $request->month ?? Carbon::now()->month;
-            $firstOfMonth = Carbon::createFromDate($year, $month, 1);
-            
-            $startDay = ($request->week - 1) * 7 + 1;
-            $endDay = min($startDay + 6, $firstOfMonth->daysInMonth);
-            
-            $startDate = $firstOfMonth->copy()->addDays($startDay - 1)->startOfDay();
-            $endDate = $firstOfMonth->copy()->addDays($endDay - 1)->endOfDay();
-            
-            $query->whereBetween('riwayat.tanggal', [ // Ganti created_at menjadi tanggal
-                $startDate->toDateTimeString(),
-                $endDate->toDateTimeString()
-            ]);
+            if($request->week == 'today'){
+                $query->whereDate('tanggal', '=', date('Y-m-d'));
+            }
+            else{
+                $year = $request->year ?? Carbon::now()->year;
+                $month = $request->month ?? Carbon::now()->month;
+                $firstOfMonth = Carbon::createFromDate($year, $month, 1);
+                
+                $startDay = ($request->week - 1) * 7 + 1;
+                $endDay = min($startDay + 6, $firstOfMonth->daysInMonth);
+                
+                $startDate = $firstOfMonth->copy()->addDays($startDay - 1)->startOfDay();
+                $endDate = $firstOfMonth->copy()->addDays($endDay - 1)->endOfDay();
+                
+                $query->whereBetween('riwayat.tanggal', [ // Ganti created_at menjadi tanggal
+                    $startDate->toDateTimeString(),
+                    $endDate->toDateTimeString()
+                ]);
+            }
         }
         // Filter tahun dan bulan hanya jika week tidak diset
         else {
