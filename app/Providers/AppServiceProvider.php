@@ -4,7 +4,8 @@ namespace App\Providers;
 
 
 use Illuminate\Support\ServiceProvider;
-// use Illuminate\Pagination\Paginator;
+use App\Misc\MiscManager;
+use App\Repositories\RepositoryManager;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -13,7 +14,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(RepositoryManager::class, function () {
+            return new RepositoryManager();
+        });
+        $this->app->singleton(MiscManager::class,function (){
+            return new MiscManager();
+        });
     }
 
     /**
