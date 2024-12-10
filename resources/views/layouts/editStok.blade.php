@@ -5,7 +5,7 @@
                 <a href="/stok"
                     class="bg-blue-500 hover:bg-blue-700 font-bold py-2 px-4 rounded mb-3 inline-block">Kembali</a>
 
-                <form action="{{url('/stok/editsave/' . $brg->id_barang)}}" method="post" id="formEdit"
+                <form action="{{url('/stok/editsave/' . $brg->id)}}" method="post" id="formEdit"
                     class="needs-validation" enctype="multipart/form-data">
                     @csrf
                     @method('put')
@@ -70,7 +70,7 @@
                             Data</button>
                 </form>
                 @if($brg->pathImg2 != '')
-                        <form action="/deleteImg/{{$brg->id_barang}}" method="POST" id="deleteForm{{$brg->id}}">
+                        <form action="/deleteImg/{{$brg->id}}" method="POST" id="deleteForm{{$brg->id}}">
                             @csrf
                             @method('DELETE')
                             <button type="button" onclick="validasiForm{{$brg->id}}()"
