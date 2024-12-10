@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Mail\userUpdation;
+use App\Misc\MiscManager;
 use App\Models\StokBarang;
+use App\Repositories\RepositoryManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -19,6 +21,15 @@ use Pusher\Pusher;
 
 class pegawaiController extends Controller
 {
+    private $pusher;
+    private $repository;
+    /**
+     * Display the user's profile form.
+     */
+    public function __construct(MiscManager $miscFeature, RepositoryManager $repo){
+        $this->pusher=$miscFeature->getMisc('pusher');
+        $this->repository=$repo->getRepository('pegawai');
+    }
     public function newToken(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -58,7 +69,7 @@ class pegawaiController extends Controller
     }
     public function index()
     {
-        $user = User::orderBy('role_id', 'asc')->Paginate(10);
+        $user = $this->repository->all()::orderBy('role_id', 'asc')->Paginate(10);
 
         return view("admin.index", ["users" => $user]);
     }
@@ -83,27 +94,26 @@ class pegawaiController extends Controller
         if ($validator->fails()) {
             return redirect('/admin/add')->with('error', $validator->errors()->first());
         }
-        $user = new User();
-        $user->name = $request->nama;
-        $user->email = $request->email;
-        $user->password = bcrypt($request->password);
-        $user->adminVerified = now();
-        $user->email_verified_at = now();
-        $user->role_id = $request->role_id;
-        $user->save();
-
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('admin-channel', 'my-event', [
-            'massage' => 'User ' . $user->name . ' Berhasil Ditambahkan ' . 'oleh Admin ' . Auth::user()->name,
+        $paramInsert=[
+            'name' => $request->nama,
+            'email' => $request->email,
+            'password' => bcrypt($request->password),
+            'role_id' => $request->role_id
+        ];
+        $this->repository->insert($paramInsert);
+        
+        $this->pusher->doPush('admin-channel', [
+            'massage' => 'User ' . $request->nama . ' Berhasil Ditambahkan ' . 'oleh Admin ' . Auth::user()->name,
             'user' => $this->generateDataPusher(Auth::user()),
-            'id' => $user->id,
+            'id' => 'added',
+            'excepturl'=>''
         ]);
 
         return redirect('/admin')->with('success', 'Data berhasil disimpan!');
     }
     public function edit($id)
     {
-        $user = User::where(['id' => $id])->first();
+        $user = $this->repository->find($id);
         $userauth = Auth::user();
         if ($user) {
             if ($user->role_id == 0 && $userauth->id != $user->id && !$userauth->role_id == 2) {
@@ -117,7 +127,7 @@ class pegawaiController extends Controller
     }
     public function editsave(Request $request, $id)
     {
-        $userfirst = User::where(['id' => $id])->first();
+        $userfirst = $this->repository->find($id);
         $validator = Validator::make($request->all(), [
             'nama' => 'required',
             'email' => 'required|email',
@@ -155,20 +165,20 @@ class pegawaiController extends Controller
         if ($request->filled('role_id')) {
             $dataToUpdate['role_id'] = $request->role_id;
         }
-        $userPush = User::where('id', $id)->first();
+        $userPush =$this->repository->find($id);
         $string = $userPush->name . $userPush->role_id . $userPush->id . ($userPush->id < 10 ? 'Asxzw' : 'asd2');
         if ($dataToUpdate['email'] != $emailold && $id != \Auth::user()->id) {
             $dataToUpdate['email_verified_at'] = null;
         }
-        User::where('id', $id)->update($dataToUpdate);
+        $this->repository->update($id,$dataToUpdate);
         if ($dataToUpdate['email'] != $emailold && $id != \Auth::user()->id) {
-            User::where('email', $dataToUpdate['email'])->first()->sendEmailVerificationNotification();
+            $this->repository->find($id)->sendEmailVerificationNotification();
         }
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('admin-channel', 'my-event', [
+        $this->pusher->doPush('admin-channel',[
             'massage' => 'User ' . $userfirst->name . ' Berhasil Diubah oleh Admin ' . Auth::user()->name,
             'user' => $this->generateDataPusher(Auth::user()),
             'id' => $id,
+            'excepturl'=>''
         ]);
 
         if (Auth::user()->id != $userPush->id) {
@@ -179,9 +189,11 @@ class pegawaiController extends Controller
             Mail::to($userPush->email)->send(new userUpdation($userPush, $changed));
             $userPush->edited = "true";
             $userPush->save();
-            $pusher->trigger(preg_replace('/\s+/', '', $string), 'my-event', [
+            $this->pusher->doPush(preg_replace('/\s+/', '', $string), [
                 'massage' => 'Akun kamu telah diubah oleh admin, silahkan login ulang',
-                'id' => \Auth::user()->id
+                'user' => $this->generateDataPusher(Auth::user()),
+                'id' => \Auth::user()->id,
+                'excepturl'=>''
             ]);
         }
 
@@ -189,8 +201,8 @@ class pegawaiController extends Controller
     }
     public function delete($id)
     {
-        $userDelete = User::where('id', $id)->first();
-        $authUser = User::where('id', Auth::user()->id)->first();
+        $userDelete = $this->repository->find($id);
+        $authUser = $this->repository->find(Auth::user()->id);
         if ($userDelete->role_id == 0 && $authUser->id != $userDelete->id && !$authUser->role_id == 2) {
             return redirect('/admin')->with('error', 'Anda tidak memiliki hak akses untuk menghapus data ini');
         }
@@ -200,12 +212,13 @@ class pegawaiController extends Controller
         if ($userDelete->name == $authUser->name) {
             return redirect('/admin')->with('error', 'Hapus Akunmu Lewat Mekanisme Profil');
         }
-        User::where('id', $id)->delete();
+        $this->repository->delete($id);
         $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
         $pusher->trigger('admin-channel', 'my-event', [
             'massage' => 'User ' . $userDelete->name . ' Berhasil Dihapus oleh Admin ' . Auth::user()->name,
             'user' => $this->generateDataPusher(Auth::user()),
             'id' => $id,
+            'excepturl'=>''
         ]);
         if (Auth::user()->id != $userDelete->id) {
             $string = $this->generateDataPusher($userDelete);
@@ -213,7 +226,9 @@ class pegawaiController extends Controller
             $userDelete->save();
             $pusher->trigger(preg_replace('/\s+/', '', $string), 'my-event', [
                 'massage' => 'Akun kamu telah didelete oleh admin, selamat tinggal! D:',
-                'id' => \Auth::user()->id
+                'user'=> $this->generateDataPusher(Auth::user()),
+                'id' => \Auth::user()->id,
+                'excepturl'=>''
             ]);
         }
         DB::table('sessions')->where('user_id', $userDelete->id)->delete();

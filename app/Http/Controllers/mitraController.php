@@ -8,12 +8,24 @@ use Illuminate\Http\Request;
 use Pusher\Pusher;
 use Storage;
 use Validator;
+use App\Misc\MiscManager;
+use App\Repositories\RepositoryManager;
 
 class mitraController extends Controller
 {
+    private $pusher;
+    private $imageManager;
+    private $repository;
+
+    public function __construct(RepositoryManager $repositoryManager, MiscManager $miscFeature )
+    {
+        $this->repository = $repositoryManager->getRepository('mitra');
+        $this->pusher = $miscFeature->getMisc('pusher');
+        $this->imageManager = $miscFeature->getMisc('imageManager');
+    }
     public function index()
     {
-        $mitra = Mitra::paginate(6);
+        $mitra = $this->repository->all()::paginate(6);
         return view('mitra.index', compact('mitra'));
     }
 
@@ -59,27 +71,21 @@ class mitraController extends Controller
         $filename = '-' . time() . '.' . $file->getClientOriginalExtension();
         Storage::disk('s3')->put('mitra/' . $filename, file_get_contents($file));
 
-        $mitra = new Mitra([
+        $result=$this->repository->insert([
             'name' => $request->get('name'),
             'address' => $request->get('address'),
             'images' => $filename,
             'noTelp' => $request->get('noTelp'),
             'gmaps'=>$request->gmaps,
         ]);
+        $this->pusher->doPush('mitra-channel',['massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
+                ' berhasil menambahkan mitra ' . $request->name,
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
+            'id' => $result['id'],
+            'excepturl'=>''
+            ]);
 
-        //begin pusher
-        $generatePusher = new pegawaiController();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('mitra-channel', 'my-event', [
-            'massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
-                ' berhasil menambahkan mitra ' . $mitra->name,
-            'user' => $generatePusher->generateDataPusher(Auth::user()),
-            'id' => $mitra->id,
-        ]);
-
-        $mitra->save();
-
-        return redirect('/mitra')->with('success', 'Mitra ' . $mitra->name . ' Berhasil Ditambahkan!');
+        return redirect('/mitra')->with('success', 'Mitra '.$result['name'].' Berhasil Ditambahkan!');
     }
 
     public function show(Mitra $mitra)
@@ -89,9 +95,9 @@ class mitraController extends Controller
 
     public function edit($id)
     {
-        $mitra = Mitra::where('id', $id)->first();
-        if (!$mitra)
-            return redirect()->route('mitra.')->with('error', 'Mitra Tidak Ditemukan');
+        $mitra=$this->repository->find($id);
+        if(!$mitra)
+        return redirect()->route('mitra.')->with('error','Mitra Tidak Ditemukan');
         return view('mitra.edit', compact('mitra'));
     }
 
@@ -127,7 +133,8 @@ class mitraController extends Controller
             return redirect()->back()->with('error', $validator->errors()->first());
         }
         $oldNama = $mitra->name;
-        $mitra->update([
+        $this->repository->update($mitra->id,
+        [
             'name' => $request->get('name'),
             'address' => $request->get('address'),
             'noTelp' => $request->get('noTelp'),
@@ -145,30 +152,27 @@ class mitraController extends Controller
         }
 
         //begin pusher
-        $generatePusher = new pegawaiController();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('mitra-channel', 'my-event', [
-            'massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
-                ' berhasil mengubah mitra ' . $oldNama,
-            'user' => $generatePusher->generateDataPusher(Auth::user()),
+        $this->pusher->doPush('mitra-channel',['massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
+                ' berhasil mengubah mitra ' . $request->name,
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $mitra->id,
+            'excepturl'=>''
         ]);
 
-        return redirect()->route('mitra.index')->with('success', 'Mitra ' . $oldNama . ' Terupdate!');
+        return redirect()->route('mitra.index')->with('success', 'Mitra '.$oldNama.' Terupdate!');
     }
 
     public function destroy(Mitra $mitra)
     {
-        Storage::disk('s3')->delete('mitra/' . $mitra->images);
-        $mitra->delete();
-        $generatePusher = new pegawaiController();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('mitra-channel', 'my-event', [
-            'massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
+        Storage::disk('s3')->delete('mitra/'.$mitra->images);
+        $this->repository->delete($mitra->id);
+        $this->pusher->doPush('mitra-channel',['massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
                 ' berhasil menghapus mitra ' . $mitra->name,
-            'user' => $generatePusher->generateDataPusher(Auth::user()),
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $mitra->id,
+            'excepturl'=>''
         ]);
-        return redirect('/mitra')->with('success', 'Mitra ' . $mitra->name . ' Terhapus!');
+        return redirect('/mitra')->with('success', 'Mitra '.$mitra->name.' Terhapus!');
     }
 }
+

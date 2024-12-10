@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Misc\imageManager;
 use App\Misc\MiscManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -20,6 +21,7 @@ class barangController extends Controller
     {
         $this->repository = $repositoryManager->getRepository('barang');
         $this->pusher = $miscFeature->getMisc('pusher');
+        $this->imageManager = $miscFeature->getMisc('imageManager');
     }
     public $needPush = true;
     public function apiRecieve()
@@ -49,11 +51,6 @@ class barangController extends Controller
     {
         return view("stok.add");
     }
-    public function getUrlImg($value)
-    {
-        $url = 'https://' . env('AWS_BUCKET') . '.s3-' . env('AWS_DEFAULT_REGION') . '.amazonaws.com/images/';
-        return $url . $value;
-    }
     public function tambahStok(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
@@ -67,7 +64,7 @@ class barangController extends Controller
         ];
         //Melakuan updateStok melalui repository
         $this->repository->updateStok($id,$paramupdate);
-        $this->pusher->doPush(['massage' => 'Stok Barang ' . $this->repository->find($id)->nama_barang . ' Berhasil Ditambahkan Sebanyak ' . $request->stok . ' oleh user ' . Auth::user()->name,
+        $this->pusher->doPush('my-channel',['massage' => 'Stok Barang ' . $this->repository->find($id)->nama_barang . ' Berhasil Ditambahkan Sebanyak ' . $request->stok . ' oleh user ' . Auth::user()->name,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $this->repository->find($id)->id_barang,
             'excepturl' => '']);
@@ -120,22 +117,10 @@ class barangController extends Controller
         $id .= $request->ukuran;
         $id .= $request->jenis == 'tinggi' ? 'H' : 'L';
         $id .= $request->bal;
-        $path1 = '';
-        $path2 = '';
-        $filename1 = '';
-        $filename2 = '';
-        if ($request->file('gambar1') != null) {
-            $file = $request->file('gambar1');
-            $filename1 = '-' . time() . '.' . $file->getClientOriginalExtension();
-            Storage::disk('s3')->put('images/' . $filename1, file_get_contents($file));
-            $path1 = $this->getUrlImg($filename1);
-        }
-        if ($request->file('gambar2') != null) {
-            $file = $request->file('gambar2');
-            $filename2 = '-' . time() . '.' . $file->getClientOriginalExtension();
-            Storage::disk('s3')->put('images/' . $filename2, file_get_contents($file));
-            $path2 = $this->getUrlImg($filename2);
-        }
+        $result = $this->imageManager->insert([
+            'gambar1'=>$request->file('gambar1'),
+            'gambar2'=>$request->file('gambar2')
+        ]);
 
         $paraminsert=[
             'id'=>$id,
@@ -146,13 +131,13 @@ class barangController extends Controller
             'bal'=>abs($request->bal),
             'harga_beli'=>$request->buy,
             'harga_jual'=>$request->sell,
-            'path1'=>$path1,
-            'path2'=>$path2,
-            'filename1'=>$filename1,
-            'filename2'=>$filename2
+            'path1'=>$result['path1'],
+            'path2'=>$result['path2'],
+            'filename1'=>$result['filename1'],
+            'filename2'=>$result['filename2']
         ];
         $this->repository->insert($paraminsert);
-        $this->pusher->doPush([
+        $this->pusher->doPush('my-channel',[
             'massage' => 'Barang ' . $request->nama . ' Berhasil Ditambahkan oleh user ' . Auth::user()->name,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $id,
@@ -163,43 +148,21 @@ class barangController extends Controller
 
     public function edit($id)
     {
-        $barang = StokBarang::where('id_barang', $id)->first();
-        if ($barang) {
-            return view("stok.edit", ["brg" => $barang]);
-        } else {
-            return redirect("/stok")->with("error", "Data tidak ditemukan");
-        }
+        $barang = $this->repository->find($id);
+        
+        return view("stok.edit", ["brg" => $barang]);
+        
     }
     public function deleteImg($id)
     {
-        $barang = StokBarang::where('id_barang', $id)->first();
-        Storage::disk('s3')->delete('images/' . $barang->fileName2);
-        $barang->pathImg2 = '';
-        $barang->fileName2 = '';
-        $barang->save();
-        
-        $this->pusher->doPush([
-            'massage' => 'Gambar 2 Barang ' . $barang->nama_barang . ' Berhasil Dihapus oleh user ' . Auth::user()->name,
+        $result=$this->imageManager->delete($id);
+        $this->pusher->doPush('my-channel',[
+            'massage' => 'Gambar 2 Barang ' . $result[0] . ' Berhasil Dihapus oleh user ' . Auth::user()->name,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
-            'id' => $barang->id_barang,
+            'id' => $result[1],
             'excepturl' => 'dashboard,riwayat,riwayatfilter,stok,stoksearch'
         ]);
-        return redirect('/stok/edit/' . $id)->with('success', 'Gambar Berhasil Dihapus');
-    }
-    function timpaGambar1($barang)
-    {
-        $pathImg1 = $barang->pathImg1;
-        if ($pathImg1 != '') {
-            Storage::disk('s3')->delete('images/' . $barang->fileName1);
-        }
-
-    }
-    function timpaGambar2($barang)
-    {
-        $pathImg2 = $barang->pathImg2;
-        if ($pathImg2 != '') {
-            Storage::disk('s3')->delete('images/' . $barang->fileName2);
-        }
+        return redirect('/stok')->with('success', 'Gambar Berhasil Dihapus');
     }
 
     public function editSave(Request $request, $id)
@@ -234,25 +197,26 @@ class barangController extends Controller
             return redirect('/stok/edit/' . $id)->with('error', $validator->errors()->first());
         }
         
-        $this->repository->update($id,$request);
-        
+        $result=$this->repository->update($id,$request);
+        $this->imageManager->update($id,['img1'=>$request->gambar1??null,'img2'=>$request->gambar2??null]);
+        $this->pusher->doPush('my-channel',[
+            'massage' => 'Barang ' . $result[0] . ' Berhasil Diubah oleh user ' . Auth::user()->name,
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
+            'id' => $result[1],
+            'excepturl' => ''
+        ]);
        
         return redirect('/stok')->with('success', 'Data Berhasil Diubah');
     }
 
     public function delete($id)
     {
-        $barang = StokBarang::where('id', $id)->first();
-        $pathImg2 = $barang->pathImg2;
-        if ($pathImg2 != '') {
-            Storage::disk('s3')->delete('images/' . $barang->fileName2);
-        }
-        Storage::disk('s3')->delete('images/' . $barang->fileName1);
-        StokBarang::destroy($id);
-        $this->pusher->doPush([
-            'massage' => 'Barang ' . $barang->nama_barang . ' Berhasil Dihapus oleh user ' . Auth::user()->name,
+        $result=$this->imageManager->deleteAll($id);
+        $this->repository->delete($id);
+        $this->pusher->doPush('my-channel',[
+            'massage' => 'Barang ' . $result[0] . ' Berhasil Dihapus oleh user ' . Auth::user()->name,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
-            'id' => $barang->id_barang,
+            'id' => $result[1],
             'excepturl' => 'dashboard,riwayat,riwayatfilter'
         ]);
         return redirect('/stok')->with('success', 'Data Berhasil Dihapus');

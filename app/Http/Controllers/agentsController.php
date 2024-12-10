@@ -8,12 +8,24 @@ use Illuminate\Http\Request;
 use Pusher\Pusher;
 use Storage;
 use Validator;
+use App\Misc\MiscManager;
+use App\Repositories\RepositoryManager;
 
 class agentsController extends Controller
 {
+    private $pusher;
+    private $imageManager;
+    private $repository;
+
+    public function __construct(RepositoryManager $repositoryManager, MiscManager $miscFeature )
+    {
+        $this->repository = $repositoryManager->getRepository('agent');
+        $this->pusher = $miscFeature->getMisc('pusher');
+        $this->imageManager = $miscFeature->getMisc('imageManager');
+    }
     public function index()
     {
-        $agents = Agents::paginate(6);
+        $agents = $this->repository->all()::paginate(6);
         return view('agents.index', compact('agents'));
     }
 
@@ -59,27 +71,21 @@ class agentsController extends Controller
         $filename = '-' . time() . '.' . $file->getClientOriginalExtension();
         Storage::disk('s3')->put('agents/' . $filename, file_get_contents($file));
 
-        $agents = new Agents([
+        $result=$this->repository->insert([
             'name' => $request->get('name'),
             'address' => $request->get('address'),
             'images' => $filename,
             'noTelp' => $request->get('noTelp'),
             'gmaps'=>$request->gmaps,
         ]);
+        $this->pusher->doPush('agent-channel',['massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
+                ' berhasil menambahkan agent ' . $request->name,
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
+            'id' => $result['id'],
+            'excepturl'=>''
+            ]);
 
-        //begin pusher
-        $generatePusher = new pegawaiController();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('agent-channel', 'my-event', [
-            'massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
-                ' berhasil menambahkan agent ' . $agents->name,
-            'user' => $generatePusher->generateDataPusher(Auth::user()),
-            'id' => $agents->id,
-        ]);
-
-        $agents->save();
-
-        return redirect('/agents')->with('success', 'Agent '.$agents->name.' Berhasil Ditambahkan!');
+        return redirect('/agents')->with('success', 'Agent '.$result['name'].' Berhasil Ditambahkan!');
     }
 
     public function show(Agents $agents)
@@ -89,7 +95,7 @@ class agentsController extends Controller
 
     public function edit($id)
     {
-        $agents=Agents::where('id',$id)->first();
+        $agents=$this->repository->find($id);
         if(!$agents)
         return redirect()->route('agents.')->with('error','Agent Tidak Ditemukan');
         return view('agents.edit', compact('agents'));
@@ -127,7 +133,8 @@ class agentsController extends Controller
             return redirect()->back()->with('error', $validator->errors()->first());
         }
         $oldNama = $agents->name;
-        $agents->update([
+        $this->repository->update($agents->id,
+        [
             'name' => $request->get('name'),
             'address' => $request->get('address'),
             'noTelp' => $request->get('noTelp'),
@@ -145,13 +152,11 @@ class agentsController extends Controller
         }
 
         //begin pusher
-        $generatePusher = new pegawaiController();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('agent-channel', 'my-event', [
-            'massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
-                ' berhasil mengubah agent ' . $oldNama,
-            'user' => $generatePusher->generateDataPusher(Auth::user()),
+        $this->pusher->doPush('agent-channel',['massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
+                ' berhasil mengubah agent ' . $request->name,
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $agents->id,
+            'excepturl'=>''
         ]);
 
         return redirect()->route('agents.index')->with('success', 'Agent '.$oldNama.' Terupdate!');
@@ -160,14 +165,12 @@ class agentsController extends Controller
     public function destroy(Agents $agents)
     {
         Storage::disk('s3')->delete('agents/'.$agents->images);
-        $agents->delete();
-        $generatePusher = new pegawaiController();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('agent-channel', 'my-event', [
-            'massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
+        $this->repository->delete($agents->id);
+        $this->pusher->doPush('agent-channel',['massage' => (Auth::user()->role_id == 0 ? 'Admin ' : 'Pegawai ') . Auth::user()->name .
                 ' berhasil menghapus agent ' . $agents->name,
-            'user' => $generatePusher->generateDataPusher(Auth::user()),
+            'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $agents->id,
+            'excepturl'=>''
         ]);
         return redirect('/agents')->with('success', 'Agent '.$agents->name.' Terhapus!');
     }
