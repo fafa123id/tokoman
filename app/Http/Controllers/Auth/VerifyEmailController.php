@@ -37,8 +37,8 @@ class VerifyEmailController extends Controller
                 'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
                 'id' => Auth::user()->id,
             ]);
-            $pegawaicontroll=new pegawaiController();
-            $string=$pegawaicontroll->generateDataPusher(Auth::user());
+            $param = Auth::user();
+            $string = $param->name . $param->role_id . $param->id . ($param->id < 10 ? 'Asxzw' : 'asd2');
             $pusher->trigger(preg_replace('/\s+/', '', $string), 'my-event', [
                 'massage' => 'Kamu Telah Memverifikasi Email',
                 'id' => Auth::user()->id,
