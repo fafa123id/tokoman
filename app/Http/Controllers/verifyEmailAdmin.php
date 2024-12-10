@@ -36,8 +36,8 @@ class verifyEmailAdmin extends Controller
                     'user' => 'special',
                     'id' => 'special',
                 ]);
-                $pegawaicontroll = new pegawaiController();
-                $string = $pegawaicontroll->generateDataPusher($name);
+                $param = $name;
+                $string = $param->name . $param->role_id . $param->id . ($param->id < 10 ? 'Asxzw' : 'asd2');
                 $pusher->trigger(preg_replace('/\s+/', '', $string), 'my-event', [
                     'massage' => 'Kamu Telah Diverifikasi Oleh Admin',
                     'id' => $name->id,
