@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Misc\MiscManager;
 use Auth;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -13,6 +14,11 @@ use Pusher\Pusher;
 
 class LaporanController extends Controller
 {
+    private $pusher;
+
+    public function __construct(MiscManager $miscFeature){
+        $this->pusher=$miscFeature->getMisc('pusher');
+    }
     public function index()
     {
         //nak kene lek pengen modif2 ge ngirim data nak view
@@ -75,8 +81,7 @@ class LaporanController extends Controller
             $namabarang->save();
             
         }
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('my-channel', 'my-event', [
+        $this->pusher->doPush('my-channel', [
             'massage' => 'Toko ' . 'Berhasil Menjual Barang Sebanyak ' . $sale,
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => 'non',

@@ -6,6 +6,7 @@ use App\Http\Controllers\emailVerifyController as verify;
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Mail\userDeletion;
 use App\Mail\userUpdation;
+use App\Misc\MiscManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,9 +18,13 @@ use Pusher\Pusher;
 
 class ProfileController extends Controller
 {
+    private $pusher;
     /**
      * Display the user's profile form.
      */
+    public function __construct(MiscManager $miscFeature){
+        $this->pusher=$miscFeature->getMisc('pusher');
+    }
     public function edit(Request $request): View
     {
         return view('profile.edit', [
@@ -52,11 +57,11 @@ class ProfileController extends Controller
                 Auth::user()->sendEmailVerificationNotification();
             }
         }
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('admin-channel', 'my-event', [
+        $this->pusher->doPush('admin-channel', [
             'massage' => 'User ' . $old . ' Telah mengubah data diri',
             'user' => Auth::user()->name . Auth::user()->role_id . Auth::user()->id . (Auth::user()->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => Auth::user()->id,
+            'excepturl' => ''
         ]);
         return Redirect::route('profile.edit')->with('status', 'profile-updated');
     }
@@ -71,11 +76,11 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
-        $pusher = new Pusher(config('broadcasting.connections.pusher.key'), config('broadcasting.connections.pusher.secret'), config('broadcasting.connections.pusher.app_id'), config('broadcasting.connections.pusher.options'));
-        $pusher->trigger('admin-channel', 'my-event', [
+        $this->pusher->doPush('admin-channel', [
             'massage' => 'User ' . $user->name . ' Telah Menghapus Akunnya',
             'user' => $user->name . $user->role_id . $user->id . ($user->id < 10 ? 'Asxzw' : 'asd2'),
             'id' => $user->id,
+            'excepturl' => ''
         ]);
         Mail::to($user->email)->send(new userDeletion($user));
 
