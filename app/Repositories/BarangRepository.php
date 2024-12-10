@@ -68,8 +68,8 @@ class BarangRepository implements RepositoryInterface
         $barang=$this->model;
         $barang->id_barang = $paraminsert['id'];
         $barang->nama_barang = $paraminsert['nama_barang'];
-        $barang->stok = abs($paraminsert['stok']);
-        $barang->bal = abs($paraminsert['bal']);
+        $barang->stok = $paraminsert['stok'];
+        $barang->bal = $paraminsert['bal'];
         $barang->jenis_tutup = $paraminsert['jenis_tutup'];
         $barang->harga_beli = $paraminsert['harga_beli'];
         $barang->harga_jual = $paraminsert['harga_jual'];
